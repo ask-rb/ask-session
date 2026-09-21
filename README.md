@@ -128,6 +128,25 @@ host.abort("s1", reason: "error")
 
 Invalid transitions (send to closed/aborted, close twice) raise `Ask::Session::InvalidTransitionError`.
 
+#### Generic event append
+
+`Host#append` lets adapters record arbitrary event types (tool calls, vendor webhooks, custom lifecycle events) without coupling ask-session to any protocol or agent gem:
+
+```ruby
+# Append a tool event
+event = host.append("s1", type: "tool.started", payload: { tool: "search" })
+
+# Append with trace correlation
+event = host.append("s1",
+  type: "vendor.webhook.received",
+  payload: { raw: body },
+  trace_id: "trace_abc",
+  causation_id: originating_event.trace_id
+)
+```
+
+Every appended event advances the session's reduced `version` and `updated_at`, regardless of event type. Appends to closed or aborted sessions raise `InvalidTransitionError`. Adapters use `append` instead of `send_message` when the event type is not `message.added` — this keeps ask-session free of protocol and agent dependencies.
+
 ## Contributing
 
 1. Fork it

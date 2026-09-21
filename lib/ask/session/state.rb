@@ -32,14 +32,7 @@ module Ask
             version: event.seq,
             updated_at: event.created_at
           )
-        when "message.added"
-          raise "No session to update" unless record
-
-          record.with_updates(
-            version: event.seq,
-            updated_at: event.created_at
-          )
-        when "tool.completed"
+        when "message.added", "tool.completed"
           raise "No session to update" unless record
 
           record.with_updates(
@@ -47,8 +40,12 @@ module Ask
             updated_at: event.created_at
           )
         else
-          # Unknown event types remain in history without crashing
-          record
+          raise "No session to update" unless record
+
+          record.with_updates(
+            version: event.seq,
+            updated_at: event.created_at
+          )
         end
       end
       private_class_method :apply_event

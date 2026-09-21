@@ -90,4 +90,25 @@ class StateTest < Minitest::Test
     assert_equal t1, record.created_at
     assert_equal t2, record.updated_at
   end
+
+  def test_reduce_unknown_event_advances_version_and_updated_at
+    t1 = Time.utc(2026, 3, 15)
+    t2 = Time.utc(2026, 3, 16)
+    e1 = build_event(session_id: "s1", seq: 1, type: "session.created",
+      payload: { status: :active }, created_at: t1)
+    e2 = build_event(session_id: "s1", seq: 2, type: "vendor.custom.event",
+      payload: { data: "x" }, created_at: t2)
+
+    record = Ask::Session::State.reduce("s1", [e1, e2])
+    assert_equal :active, record.status
+    assert_equal 2, record.version
+    assert_equal t2, record.updated_at
+  end
+
+  def test_reduce_unknown_event_without_session_created_raises
+    e1 = build_event(session_id: "s1", seq: 1, type: "vendor.unknown",
+      payload: {})
+
+    assert_raises(RuntimeError) { Ask::Session::State.reduce("s1", [e1]) }
+  end
 end

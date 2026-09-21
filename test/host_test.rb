@@ -537,3 +537,150 @@ class HostPublishPrunesClosedTest < Minitest::Test
     assert_equal({ content: "x" }, event.payload)
   end
 end
+
+class HostAppendTest < Minitest::Test
+  include TestHelpers
+
+  def setup
+    @store = Ask::Session::Store.new
+    @host = Ask::Session::Host.new(store: @store)
+  end
+
+  def test_append_returns_event
+    @host.create(id: "s1")
+    event = @host.append("s1", type: "tool.started", payload: { tool: "search" })
+    assert_kind_of Ask::Session::Event, event
+    assert_equal "tool.started", event.type
+    assert_equal({ tool: "search" }, event.payload)
+  end
+
+  def test_append_assigns_next_seq
+    @host.create(id: "s1")
+    e1 = @host.append("s1", type: "tool.started")
+    e2 = @host.append("s1", type: "tool.completed")
+    assert_equal 2, e1.seq
+    assert_equal 3, e2.seq
+  end
+
+  def test_append_preserves_trace_id
+    @host.create(id: "s1")
+    event = @host.append("s1", type: "custom.event", trace_id: "trace_abc")
+    assert_equal "trace_abc", event.trace_id
+  end
+
+  def test_append_preserves_causation_id
+    @host.create(id: "s1")
+    created_event = @store.events("s1").first
+    event = @host.append("s1", type: "custom.event", causation_id: created_event.trace_id)
+    assert_equal created_event.trace_id, event.causation_id
+  end
+
+  def test_append_default_empty_payload
+    @host.create(id: "s1")
+    event = @host.append("s1", type: "custom.event")
+    assert_equal({}, event.payload)
+  end
+
+  def test_append_raises_for_missing_session
+    assert_raises(Ask::Session::NotFoundError) { @host.append("missing", type: "x") }
+  end
+
+  def test_append_raises_for_closed_session
+    @host.create(id: "s1")
+    @host.close("s1")
+    assert_raises(Ask::Session::InvalidTransitionError) { @host.append("s1", type: "x") }
+  end
+
+  def test_append_raises_for_aborted_session
+    @host.create(id: "s1")
+    @host.abort("s1")
+    assert_raises(Ask::Session::InvalidTransitionError) { @host.append("s1", type: "x") }
+  end
+
+  def test_append_advances_state_version
+    @host.create(id: "s1")
+    @host.append("s1", type: "custom.a", payload: { x: 1 })
+    @host.append("s1", type: "custom.b", payload: { x: 2 })
+    record = @host.session("s1")
+    assert_equal 3, record.version
+  end
+
+  def test_append_advances_updated_at
+    @host.create(id: "s1")
+    record_after_create = @host.session("s1")
+    t_create = record_after_create.updated_at
+
+    @host.append("s1", type: "custom.a")
+    record_after_first = @host.session("s1")
+    assert record_after_first.updated_at >= t_create
+
+    @host.append("s1", type: "custom.b")
+    record_after_second = @host.session("s1")
+    assert record_after_second.updated_at >= record_after_first.updated_at
+    assert_equal 3, record_after_second.version
+  end
+
+  def test_append_preserves_existing_status
+    @host.create(id: "s1")
+    @host.append("s1", type: "custom.event")
+    record = @host.session("s1")
+    assert_equal :active, record.status
+  end
+
+  def test_append_publishes_to_subscribers
+    @host.create(id: "s1")
+    sub = @host.subscribe("s1")
+    sub.wait(timeout: 0.1) # consume replay
+
+    @host.append("s1", type: "custom.event", payload: { data: 42 })
+    event = sub.wait(timeout: 0.5)
+    sub.close
+
+    assert_equal "custom.event", event.type
+    assert_equal({ data: 42 }, event.payload)
+  end
+
+  def test_append_replay_includes_all_events
+    @host.create(id: "s1")
+    @host.append("s1", type: "custom.a")
+    @host.append("s1", type: "custom.b")
+
+    sub = @host.subscribe("s1")
+    received = []
+    3.times { received << sub.wait(timeout: 0.1) }
+    sub.close
+
+    types = received.map(&:type)
+    assert_equal ["session.created", "custom.a", "custom.b"], types
+  end
+
+  def test_append_unknown_event_advances_version
+    @host.create(id: "s1")
+    @host.append("s1", type: "vendor.webhook.received", payload: { raw: "data" })
+    record = @host.session("s1")
+    assert_equal 2, record.version
+    assert_equal :active, record.status
+  end
+
+  def test_append_unknown_event_advances_updated_at
+    @host.create(id: "s1")
+    @host.append("s1", type: "vendor.webhook.received")
+    record = @host.session("s1")
+    assert_equal 2, record.version
+    refute_nil record.updated_at
+  end
+
+  def test_append_generic_event_type_round_trip
+    @host.create(id: "s1")
+    @host.append("s1", type: "custom.phase.started", payload: { phase: "discovery" })
+    @host.close("s1", reason: "complete")
+
+    events = @store.events("s1")
+    types = events.map(&:type)
+    assert_equal ["session.created", "custom.phase.started", "session.ended"], types
+
+    record = @host.session("s1")
+    assert_equal :closed, record.status
+    assert_equal 3, record.version
+  end
+end

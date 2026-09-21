@@ -58,6 +58,26 @@ module Ask
         end
       end
 
+      def append(session_id, type:, payload: {}, trace_id: nil, causation_id: nil)
+        @mutex.synchronize do
+          record = current_state(session_id)
+          assert_open!(record)
+
+          seq = @store.current_sequence(session_id) + 1
+          event = Event.create(
+            session_id: session_id,
+            seq: seq,
+            type: type,
+            payload: payload,
+            trace_id: trace_id,
+            causation_id: causation_id
+          )
+          @store.append_event(event, expected_sequence: seq - 1)
+          publish(event)
+          event
+        end
+      end
+
       def close(session_id, reason: nil)
         @mutex.synchronize do
           record = current_state(session_id)
