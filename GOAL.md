@@ -32,8 +32,10 @@ guardrails, and a state reducer that reconstructs session snapshots from history
   It wraps Store, creates events, enforces transitions, and delivers events to
   subscribers atomically under a single lock.
 - `Ask::Session::Subscription` is a thread-safe subscription backed by a Queue
-  and Mutex. `wait` polls with a timeout, `each` yields until closed, and
-  `close` signals the subscription to stop.
+  and Mutex. `next` is the primary method using `Timeout.timeout` with
+  `Queue#pop`; `wait` is an alias for backward compatibility. `each` yields
+  until closed, and `close` pushes a sentinel so a blocked `next` wakes with
+  `nil`.
 
 ## Phases with task lists
 
@@ -47,8 +49,9 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 | Serialization | - [x] Add Record/Event to_h/from_h, Codec, Store export/import, SerializationError. |
 | Phase 2 Hardening | - [x] Add Store#state, single-session export, atomic import, frozen events_after. |
 | Phase 3 Host | - [x] Add Host (create, send_message, close, abort, subscribe, publish-subscribe). |
-| | - [x] Add Subscription (wait, close, each, replay). |
+| | - [x] Add Subscription (next, wait alias, close, each, replay). |
 | | - [x] Add InvalidTransitionError for illegal state transitions. |
+| Phase 4 Hardening | - [x] Host#initialize default store, Host#list with State.reduce, Host#create under mutex, Subscription#next with Timeout.timeout, Host#publish prunes closed subs. |
 
 ## Definition of done
 

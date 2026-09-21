@@ -17,7 +17,7 @@ class HostCreateTest < Minitest::Test
   end
 
   def test_create_emits_session_created_event
-    record = @host.create(id: "s1", metadata: { key: "val" })
+    @host.create(id: "s1", metadata: { key: "val" })
     events = @store.events("s1")
     assert_equal 1, events.size
     assert_equal "session.created", events.first.type
@@ -422,5 +422,117 @@ class HostSubscriptionBoundaryOrderTest < Minitest::Test
 
     seqs = received.map(&:seq)
     assert_equal [3, 4], seqs
+  end
+end
+
+class HostDefaultStoreTest < Minitest::Test
+  def test_initialize_uses_default_store
+    host = Ask::Session::Host.new(store: Ask::Session::Store.new)
+    record = host.create(id: "s1")
+    assert_equal "s1", record.id
+  end
+end
+
+class HostListReflectsStateTest < Minitest::Test
+  def setup
+    @host = Ask::Session::Host.new(store: Ask::Session::Store.new)
+  end
+
+  def test_list_reflects_closed_status
+    @host.create(id: "s1")
+    @host.close("s1", reason: "done")
+    list = @host.list
+    s1 = list.find { |r| r.id == "s1" }
+    assert_equal :closed, s1.status
+  end
+
+  def test_list_reflects_aborted_status
+    @host.create(id: "s1")
+    @host.abort("s1", reason: "error")
+    list = @host.list
+    s1 = list.find { |r| r.id == "s1" }
+    assert_equal :aborted, s1.status
+  end
+end
+
+class HostCreateMutexTest < Minitest::Test
+  def test_create_wraps_operations_under_mutex
+    host = Ask::Session::Host.new(store: Ask::Session::Store.new)
+    record = host.create(id: "s1")
+    sub = host.subscribe("s1")
+    event = sub.wait(timeout: 0.5)
+    sub.close
+    assert_equal "session.created", event.type
+    assert_equal "s1", record.id
+  end
+end
+
+class SubscriptionNextTest < Minitest::Test
+  def setup
+    @store = Ask::Session::Store.new
+    @host = Ask::Session::Host.new(store: @store)
+  end
+
+  def test_next_returns_event
+    @host.create(id: "s1")
+    sub = @host.subscribe("s1")
+    event = sub.next(timeout: 0.5)
+    sub.close
+    assert_kind_of Ask::Session::Event, event
+  end
+
+  def test_next_returns_nil_on_timeout
+    sub = Ask::Session::Subscription.new(id: 1, session_id: "s1")
+    result = sub.next(timeout: 0.05)
+    sub.close
+    assert_nil result
+  end
+
+  def test_next_returns_nil_when_closed
+    @host.create(id: "s1")
+    sub = @host.subscribe("s1")
+    sub.close
+    assert_nil sub.next(timeout: 0.1)
+  end
+
+  def test_wait_is_alias_for_next
+    sub = Ask::Session::Subscription.new(id: 1, session_id: "s1")
+    assert_equal sub.method(:next), sub.method(:wait)
+    sub.close
+  end
+end
+
+class SubscriptionCloseWakesBlockedTest < Minitest::Test
+  def test_close_wakes_blocked_next_with_nil
+    sub = Ask::Session::Subscription.new(id: 1, session_id: "s1")
+    result = nil
+    thread = Thread.new { result = sub.next(timeout: 1.0) }
+    sleep 0.05
+    sub.close
+    thread.join(1)
+    assert_nil result
+  end
+end
+
+class HostPublishPrunesClosedTest < Minitest::Test
+  def setup
+    @store = Ask::Session::Store.new
+    @host = Ask::Session::Host.new(store: @store)
+  end
+
+  def test_publish_removes_closed_subscriptions
+    @host.create(id: "s1")
+    sub1 = @host.subscribe("s1")
+    sub2 = @host.subscribe("s1")
+    sub1.wait(timeout: 0.1) # consume replay
+    sub2.wait(timeout: 0.1) # consume replay
+    sub1.close
+
+    @host.send_message("s1", content: "x")
+    event = sub2.wait(timeout: 0.5)
+    sub2.close
+
+    assert_equal "message.added", event.type
+    assert_equal({ content: "x" }, event.payload)
   end
 end

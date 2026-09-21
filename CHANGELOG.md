@@ -25,5 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Store#import` — accepts both all-sessions and single-session shapes; validates atomically before mutating.
 - `Store#events_after` — now returns a frozen array snapshot.
 - `Ask::Session::Host` — replayable session host with create, send_message, close, abort, subscribe, and publish-subscribe.
-- `Ask::Session::Subscription` — thread-safe subscription with wait (poll-based timeout), close, each, and replay.
+- `Ask::Session::Subscription` — thread-safe subscription with next (Timeout.timeout-backed), wait (alias for next), close, each, and replay.
 - `Ask::Session::InvalidTransitionError` — dedicated error for illegal state transitions (send to closed/aborted, close/abort twice).
+
+### Changed
+
+- `Host#initialize` now accepts `store:` with a default of `Store.new`.
+- `Host#list` returns `State.reduce` records so close/abort status is reflected.
+- `Host#create` performs store create, event append, and publish atomically under `@mutex`.
+- `Host#publish` prunes closed subscriptions from its per-session list.
+- `Subscription#next` is the primary method using `Queue#pop` wrapped in `Timeout.timeout`; `wait` is aliased to `next` for backward compatibility.
+- `Subscription#close` pushes a sentinel so a blocked `next` wakes with `nil` instead of relying on sleep polling.

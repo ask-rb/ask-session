@@ -3,7 +3,7 @@
 module Ask
   module Session
     class Host
-      def initialize(store:)
+      def initialize(store: Store.new)
         @store = store
         @subscriptions = {}
         @mutex = Mutex.new
@@ -11,17 +11,19 @@ module Ask
       end
 
       def create(id: nil, metadata: {}, status: :active, trace_id: nil)
-        record = @store.create(id: id, status: status, metadata: metadata)
-        event = Event.create(
-          session_id: record.id,
-          seq: 1,
-          type: "session.created",
-          payload: { session_id: record.id, metadata: metadata, status: status },
-          trace_id: trace_id
-        )
-        @store.append_event(event, expected_sequence: 0)
-        @mutex.synchronize { publish(event) }
-        State.reduce(record.id, @store.events(record.id))
+        @mutex.synchronize do
+          record = @store.create(id: id, status: status, metadata: metadata)
+          event = Event.create(
+            session_id: record.id,
+            seq: 1,
+            type: "session.created",
+            payload: { session_id: record.id, metadata: metadata, status: status },
+            trace_id: trace_id
+          )
+          @store.append_event(event, expected_sequence: 0)
+          publish(event)
+          State.reduce(record.id, @store.events(record.id))
+        end
       end
 
       def session(id)
@@ -29,7 +31,7 @@ module Ask
       end
 
       def list
-        @store.list
+        @store.list.map { |record| State.reduce(record.id, @store.events(record.id)) }
       end
 
       def events(id, after_seq: 0)
@@ -112,6 +114,7 @@ module Ask
       def publish(event)
         subs = @subscriptions[event.session_id]
         return unless subs
+        subs.reject!(&:closed?)
         subs.each { |sub| sub.enqueue(event) }
       end
 

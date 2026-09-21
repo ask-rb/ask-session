@@ -117,7 +117,7 @@ host.events("s1")   # => [Event, ...]
 
 # Subscribe with replay
 sub = host.subscribe("s1")
-event = sub.wait(timeout: 1.0)  # returns event or nil on timeout
+event = sub.next(timeout: 1.0)  # returns event or nil on timeout
 sub.each { |e| puts e.type }    # yields until closed
 sub.close
 
