@@ -10,7 +10,7 @@ module Ask
           record = apply_event(record, event)
         end
 
-        record || Record.create(id: session_id, created_at: Time.now.utc)
+        (record || Record.create(id: session_id, created_at: Time.now.utc)).freeze
       end
 
       def self.apply_event(record, event)

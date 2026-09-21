@@ -59,7 +59,7 @@ class StoreTest < Minitest::Test
 
   def test_append_event_raises_on_missing_session
     event = build_event(session_id: "missing", seq: 1)
-    assert_raises(Ask::Session::ConcurrencyError) do
+    assert_raises(Ask::Session::NotFoundError) do
       @store.append_event(event, expected_sequence: 0)
     end
   end
@@ -79,7 +79,7 @@ class StoreTest < Minitest::Test
   end
 
   def test_events_after_raises_on_missing_session
-    assert_raises(Ask::Session::ConcurrencyError) do
+    assert_raises(Ask::Session::NotFoundError) do
       @store.events_after("missing", after_seq: 0)
     end
   end
@@ -93,7 +93,7 @@ class StoreTest < Minitest::Test
   end
 
   def test_current_sequence_raises_on_missing
-    assert_raises(Ask::Session::ConcurrencyError) do
+    assert_raises(Ask::Session::NotFoundError) do
       @store.current_sequence("missing")
     end
   end

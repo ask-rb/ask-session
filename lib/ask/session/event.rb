@@ -12,7 +12,26 @@ module Ask
           trace_id: trace_id || "trace_#{SecureRandom.hex(8)}",
           causation_id: causation_id,
           created_at: created_at || Time.now.utc
-        )
+        ).freeze
+      end
+
+      def initialize(**)
+        super
+        self.payload = deep_freeze(payload) unless payload.frozen?
+        freeze
+      end
+
+      private
+
+      def deep_freeze(obj)
+        case obj
+        when Hash
+          obj.each_with_object({}) { |(k, v), h| h[k] = deep_freeze(v) }.freeze
+        when Array
+          obj.map { |v| deep_freeze(v) }.freeze
+        else
+          obj
+        end
       end
     end
   end

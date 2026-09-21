@@ -12,11 +12,30 @@ module Ask
           created_at: now,
           updated_at: updated_at || now,
           version: 0
-        )
+        ).freeze
+      end
+
+      def initialize(**)
+        super
+        self.metadata = deep_freeze(metadata) unless metadata.frozen?
+        freeze
       end
 
       def with_updates(**attrs)
-        self.class.new(to_h.merge(attrs).merge(updated_at: attrs[:updated_at] || Time.now.utc))
+        self.class.new(**to_h.merge(attrs).merge(updated_at: attrs[:updated_at] || Time.now.utc)).freeze
+      end
+
+      private
+
+      def deep_freeze(obj)
+        case obj
+        when Hash
+          obj.each_with_object({}) { |(k, v), h| h[k] = deep_freeze(v) }.freeze
+        when Array
+          obj.map { |v| deep_freeze(v) }.freeze
+        else
+          obj
+        end
       end
     end
   end

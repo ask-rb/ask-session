@@ -10,6 +10,9 @@ require_relative "session/state"
 
 module Ask
   module Session
-    class ConcurrencyError < StandardError; end
+    class Error < StandardError; end
+    class ConcurrencyError < Error; end
+    class NotFoundError < Error; end
+    class DuplicateSessionError < Error; end
   end
 end
