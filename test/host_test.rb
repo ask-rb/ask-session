@@ -426,10 +426,11 @@ class HostSubscriptionBoundaryOrderTest < Minitest::Test
 end
 
 class HostDefaultStoreTest < Minitest::Test
-  def test_initialize_uses_default_store
-    host = Ask::Session::Host.new(store: Ask::Session::Store.new)
+  def test_initialize_without_store_creates_working_host
+    host = Ask::Session::Host.new
     record = host.create(id: "s1")
     assert_equal "s1", record.id
+    assert_equal :active, record.status
   end
 end
 
