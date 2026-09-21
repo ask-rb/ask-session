@@ -24,7 +24,7 @@ module Ask
             updated_at: event.created_at,
             version: event.seq
           )
-        when "session.status_changed"
+        when "session.status_changed", "session.ended", "session.aborted"
           raise "No session to update" unless record
 
           record.with_updates(

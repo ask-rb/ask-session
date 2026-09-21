@@ -10,6 +10,8 @@ require_relative "session/event"
 require_relative "session/store"
 require_relative "session/state"
 require_relative "session/codec"
+require_relative "session/subscription"
+require_relative "session/host"
 
 module Ask
   module Session
@@ -18,5 +20,6 @@ module Ask
     class NotFoundError < Error; end
     class DuplicateSessionError < Error; end
     class SerializationError < Error; end
+    class InvalidTransitionError < Error; end
   end
 end

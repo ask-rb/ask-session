@@ -25,8 +25,15 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 - `Ask::Session::Store` is an in-memory store with `create`, `load`, `list`,
   `append_event`, `events_after`, and `current_sequence`.
 - `Ask::Session::State` is a pure reducer that rebuilds `Record` from events and
-  handles `session.created`, `session.status_changed`, `message.added`, and
-  `tool.completed`. Unknown event types remain in history without crashing.
+  handles `session.created`, `session.status_changed`, `session.ended`,
+  `session.aborted`, `message.added`, and `tool.completed`. Unknown event types
+  remain in history without crashing.
+- `Ask::Session::Host` is a replayable session host with publish-subscribe.
+  It wraps Store, creates events, enforces transitions, and delivers events to
+  subscribers atomically under a single lock.
+- `Ask::Session::Subscription` is a thread-safe subscription backed by a Queue
+  and Mutex. `wait` polls with a timeout, `each` yields until closed, and
+  `close` signals the subscription to stop.
 
 ## Phases with task lists
 
@@ -39,6 +46,9 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 | Commit | - [x] Review diff, stage, and commit the complete slice. |
 | Serialization | - [x] Add Record/Event to_h/from_h, Codec, Store export/import, SerializationError. |
 | Phase 2 Hardening | - [x] Add Store#state, single-session export, atomic import, frozen events_after. |
+| Phase 3 Host | - [x] Add Host (create, send_message, close, abort, subscribe, publish-subscribe). |
+| | - [x] Add Subscription (wait, close, each, replay). |
+| | - [x] Add InvalidTransitionError for illegal state transitions. |
 
 ## Definition of done
 

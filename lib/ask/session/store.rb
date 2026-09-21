@@ -81,7 +81,7 @@ module Ask
           session_events = @events[session_id]
           raise NotFoundError, "Session not found: #{session_id}" unless session_events
 
-          session_events.freeze
+          session_events.dup.freeze
         end
       end
 

@@ -94,6 +94,40 @@ record.status  # => :active
 record.version # => 2
 ```
 
+### Host
+
+Replayable session host with publish-subscribe:
+
+```ruby
+store = Ask::Session::Store.new
+host = Ask::Session::Host.new(store: store)
+
+# Create a session
+record = host.create(id: "s1", metadata: { user: "alice" })
+record.status # => :active
+
+# Send messages
+event = host.send_message("s1", content: "hello")
+event.type # => "message.added"
+
+# Query
+host.session("s1")  # => reduced Record
+host.list           # => [Record, ...]
+host.events("s1")   # => [Event, ...]
+
+# Subscribe with replay
+sub = host.subscribe("s1")
+event = sub.wait(timeout: 1.0)  # returns event or nil on timeout
+sub.each { |e| puts e.type }    # yields until closed
+sub.close
+
+# Close or abort
+host.close("s1", reason: "done")
+host.abort("s1", reason: "error")
+```
+
+Invalid transitions (send to closed/aborted, close twice) raise `Ask::Session::InvalidTransitionError`.
+
 ## Contributing
 
 1. Fork it

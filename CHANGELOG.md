@@ -24,3 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Store#export(session_id)` — exports a single session payload for targeted import.
 - `Store#import` — accepts both all-sessions and single-session shapes; validates atomically before mutating.
 - `Store#events_after` — now returns a frozen array snapshot.
+- `Ask::Session::Host` — replayable session host with create, send_message, close, abort, subscribe, and publish-subscribe.
+- `Ask::Session::Subscription` — thread-safe subscription with wait (poll-based timeout), close, each, and replay.
+- `Ask::Session::InvalidTransitionError` — dedicated error for illegal state transitions (send to closed/aborted, close/abort twice).
