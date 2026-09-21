@@ -15,6 +15,53 @@ module Ask
         ).freeze
       end
 
+      def to_h
+        {
+          session_id: session_id,
+          seq: seq,
+          type: type,
+          payload: payload,
+          trace_id: trace_id,
+          causation_id: causation_id,
+          created_at: created_at&.utc&.iso8601
+        }
+      end
+
+      def self.from_h(h)
+        new(
+          session_id: h[:session_id] || h["session_id"],
+          seq: h[:seq] || h["seq"],
+          type: h[:type] || h["type"],
+          payload: deep_symbolize(h[:payload] || h["payload"]),
+          trace_id: h[:trace_id] || h["trace_id"],
+          causation_id: h[:causation_id] || h["causation_id"],
+          created_at: parse_time(h[:created_at] || h["created_at"])
+        )
+      end
+
+      def self.deep_symbolize(obj)
+        case obj
+        when Hash
+          obj.each_with_object({}) { |(k, v), h| h[k.to_sym] = deep_symbolize(v) }
+        when Array
+          obj.map { |v| deep_symbolize(v) }
+        else
+          obj
+        end
+      end
+      private_class_method :deep_symbolize
+
+      def self.parse_time(value)
+        case value
+        when Time then value
+        when String then Time.parse(value).utc
+        when nil then nil
+        else
+          raise SerializationError, "Invalid time value: #{value.inspect}"
+        end
+      end
+      private_class_method :parse_time
+
       def initialize(**)
         super
         self.payload = deep_freeze(payload) unless payload.frozen?

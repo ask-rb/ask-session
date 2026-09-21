@@ -37,6 +37,7 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 | Implementation | - [x] Implement value objects, in-memory store, and state reducer. |
 | Verification | - [x] Run full suite green on Ruby 3.2+. |
 | Commit | - [x] Review diff, stage, and commit the complete slice. |
+| Serialization | - [x] Add Record/Event to_h/from_h, Codec, Store export/import, SerializationError. |
 
 ## Definition of done
 

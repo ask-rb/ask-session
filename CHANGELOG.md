@@ -14,3 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Ask::Session::Store` — in-memory store with concurrency guardrails.
 - `Ask::Session::State` — pure reducer that reconstructs session state from events.
 - `Ask::Session::ConcurrencyError` — dedicated error for sequence mismatches.
+- `Ask::Session::SerializationError` — dedicated error for malformed/missing-field JSON.
+- `Record#to_h` / `Record.from_h` — portable hash serialization with ISO8601 timestamps.
+- `Event#to_h` / `Event.from_h` — portable hash serialization with ISO8601 timestamps.
+- `Ask::Session::Codec` — JSON dump/load for Record and Event.
+- `Store#events` — returns a frozen array of all events for a session.
+- `Store#export` / `Store#import` — full session portability with duplicate and sequence validation.

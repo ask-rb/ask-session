@@ -15,6 +15,51 @@ module Ask
         ).freeze
       end
 
+      def to_h
+        {
+          id: id,
+          status: status,
+          metadata: metadata,
+          created_at: created_at&.utc&.iso8601,
+          updated_at: updated_at&.utc&.iso8601,
+          version: version
+        }
+      end
+
+      def self.from_h(h)
+        new(
+          id: h[:id] || h["id"],
+          status: (h[:status] || h["status"])&.to_sym,
+          metadata: deep_symbolize(h[:metadata] || h["metadata"]),
+          created_at: parse_time(h[:created_at] || h["created_at"]),
+          updated_at: parse_time(h[:updated_at] || h["updated_at"]),
+          version: h[:version] || h["version"]
+        )
+      end
+
+      def self.deep_symbolize(obj)
+        case obj
+        when Hash
+          obj.each_with_object({}) { |(k, v), h| h[k.to_sym] = deep_symbolize(v) }
+        when Array
+          obj.map { |v| deep_symbolize(v) }
+        else
+          obj
+        end
+      end
+      private_class_method :deep_symbolize
+
+      def self.parse_time(value)
+        case value
+        when Time then value
+        when String then Time.parse(value).utc
+        when nil then nil
+        else
+          raise SerializationError, "Invalid time value: #{value.inspect}"
+        end
+      end
+      private_class_method :parse_time
+
       def initialize(**)
         super
         self.metadata = deep_freeze(metadata) unless metadata.frozen?
@@ -22,7 +67,15 @@ module Ask
       end
 
       def with_updates(**attrs)
-        self.class.new(**to_h.merge(attrs).merge(updated_at: attrs[:updated_at] || Time.now.utc)).freeze
+        merged = {
+          id: id,
+          status: status,
+          metadata: metadata,
+          created_at: created_at,
+          updated_at: attrs[:updated_at] || Time.now.utc,
+          version: version
+        }.merge(attrs)
+        self.class.new(**merged).freeze
       end
 
       private
