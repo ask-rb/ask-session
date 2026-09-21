@@ -54,12 +54,16 @@ module Ask
         event
       end
 
+      def state(session_id)
+        State.reduce(session_id, events(session_id))
+      end
+
       def events_after(session_id, after_seq:)
         @mutex.synchronize do
           session_events = @events[session_id]
           raise NotFoundError, "Session not found: #{session_id}" unless session_events
 
-          session_events.select { |e| e.seq > after_seq }
+          session_events.select { |e| e.seq > after_seq }.freeze
         end
       end
 
@@ -81,12 +85,23 @@ module Ask
         end
       end
 
-      def export
+      def export(session_id = nil)
         @mutex.synchronize do
-          {
-            sessions: @sessions.values.map(&:to_h),
-            events: @events.values.flatten.map(&:to_h)
-          }
+          if session_id
+            record = @sessions[session_id]
+            raise NotFoundError, "Session not found: #{session_id}" unless record
+
+            session_events = @events[session_id] || []
+            {
+              sessions: [record.to_h],
+              events: session_events.map(&:to_h)
+            }
+          else
+            {
+              sessions: @sessions.values.map(&:to_h),
+              events: @events.values.flatten.map(&:to_h)
+            }
+          end
         end
       end
 
@@ -95,26 +110,29 @@ module Ask
         events = data[:events] || data["events"] || []
 
         @mutex.synchronize do
-          imported_session_ids = []
+          pending_sessions = {}
+          pending_events = {}
 
           sessions.each do |s|
             id = s[:id] || s["id"]
+            raise SerializationError, "Session record missing id" unless id && !id.to_s.empty?
             raise DuplicateSessionError, "Session already exists: #{id}" if @sessions.key?(id)
+            raise DuplicateSessionError, "Duplicate session in import data: #{id}" if pending_sessions.key?(id)
 
             record = Record.from_h(s)
-            @sessions[record.id] = record
-            @events[record.id] = []
-            imported_session_ids << record.id
+            pending_sessions[record.id] = record
+            pending_events[record.id] = []
           end
 
           events.each do |e|
             session_id = e[:session_id] || e["session_id"]
-            unless @events.key?(session_id)
+            unless pending_events.key?(session_id) || @events.key?(session_id)
               raise NotFoundError, "Session not found: #{session_id}"
             end
 
             event = Event.from_h(e)
-            session_events = @events[session_id]
+            target = pending_events.key?(session_id) ? pending_events : @events
+            session_events = target[session_id]
             expected_seq = session_events.size
 
             unless event.seq == expected_seq + 1
@@ -123,6 +141,11 @@ module Ask
             end
 
             session_events << event
+          end
+
+          pending_sessions.each do |id, record|
+            @sessions[id] = record
+            @events[id] = pending_events[id]
           end
         end
       end

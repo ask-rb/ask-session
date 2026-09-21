@@ -38,6 +38,7 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 | Verification | - [x] Run full suite green on Ruby 3.2+. |
 | Commit | - [x] Review diff, stage, and commit the complete slice. |
 | Serialization | - [x] Add Record/Event to_h/from_h, Codec, Store export/import, SerializationError. |
+| Phase 2 Hardening | - [x] Add Store#state, single-session export, atomic import, frozen events_after. |
 
 ## Definition of done
 

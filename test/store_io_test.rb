@@ -91,6 +91,29 @@ class StoreExportTest < Minitest::Test
     assert_equal({ nested: { a: 1 } }, loaded.metadata)
     assert_equal 1, new_store.current_sequence("s1")
   end
+
+  def test_export_single_session_returns_one_record_and_ordered_events
+    @store.create(id: "s1", status: :active)
+    @store.create(id: "s2", status: :completed)
+    @store.append_event(build_event(session_id: "s1", seq: 1,
+      type: "session.created", payload: { status: :active },
+      created_at: Time.utc(2026, 1, 1)), expected_sequence: 0)
+    @store.append_event(build_event(session_id: "s2", seq: 1,
+      type: "session.created", payload: { status: :completed },
+      created_at: Time.utc(2026, 1, 1)), expected_sequence: 0)
+
+    data = @store.export("s1")
+    assert_equal 1, data[:sessions].size
+    assert_equal "s1", data[:sessions].first[:id]
+    assert_equal 1, data[:events].size
+    assert_equal "s1", data[:events].first[:session_id]
+  end
+
+  def test_export_single_session_raises_for_missing
+    assert_raises(Ask::Session::NotFoundError) do
+      @store.export("missing")
+    end
+  end
 end
 
 class StoreImportTest < Minitest::Test
@@ -234,5 +257,112 @@ class StoreImportTest < Minitest::Test
     assert_equal :completed, new_store.load("s2").status
     assert_equal 1, new_store.current_sequence("s1")
     assert_equal 1, new_store.current_sequence("s2")
+  end
+
+  def test_import_accepts_single_session_shape
+    @store.create(id: "s1")
+    @store.append_event(build_event(session_id: "s1", seq: 1,
+      type: "session.created", payload: { status: :active },
+      created_at: Time.utc(2026, 1, 1)), expected_sequence: 0)
+
+    data = @store.export("s1")
+    new_store = Ask::Session::Store.new
+    new_store.import(data)
+
+    loaded = new_store.load("s1")
+    assert_equal "s1", loaded.id
+    assert_equal 1, new_store.current_sequence("s1")
+  end
+
+  def test_import_atomic_no_mutation_on_bad_sequence
+    @store.create(id: "existing")
+    data = {
+      sessions: [
+        { id: "new_s1", status: :active, metadata: {},
+          created_at: Time.utc(2026, 1, 1).iso8601,
+          updated_at: Time.utc(2026, 1, 1).iso8601, version: 0 }
+      ],
+      events: [
+        { session_id: "new_s1", seq: 1, type: "session.created",
+          payload: {}, trace_id: "t1", causation_id: nil,
+          created_at: Time.utc(2026, 1, 1).iso8601 },
+        { session_id: "new_s1", seq: 3, type: "message.added",
+          payload: {}, trace_id: "t2", causation_id: nil,
+          created_at: Time.utc(2026, 1, 2).iso8601 }
+      ]
+    }
+
+    assert_raises(Ask::Session::ConcurrencyError) { @store.import(data) }
+    assert_nil @store.load("new_s1"), "store must not be mutated on import failure"
+    assert_equal 1, @store.list.size, "original session must remain"
+  end
+
+  def test_import_atomic_no_mutation_on_duplicate
+    @store.create(id: "s1")
+    data = {
+      sessions: [
+        { id: "s1", status: :active, metadata: {},
+          created_at: Time.utc(2026, 1, 1).iso8601,
+          updated_at: Time.utc(2026, 1, 1).iso8601, version: 0 }
+      ],
+      events: []
+    }
+
+    assert_raises(Ask::Session::DuplicateSessionError) { @store.import(data) }
+    loaded = @store.load("s1")
+    assert_equal :active, loaded.status, "original session must remain unchanged"
+  end
+
+  def test_import_atomic_no_mutation_on_missing_session_for_events
+    data = {
+      sessions: [],
+      events: [
+        { session_id: "ghost", seq: 1, type: "session.created",
+          payload: {}, trace_id: "t1", causation_id: nil,
+          created_at: Time.utc(2026, 1, 1).iso8601 }
+      ]
+    }
+
+    assert_raises(Ask::Session::NotFoundError) { @store.import(data) }
+    assert_equal 0, @store.list.size, "store must remain empty"
+  end
+
+  def test_import_atomic_no_mutation_on_malformed_record
+    data = {
+      sessions: [
+        { id: nil, status: :active, metadata: {},
+          created_at: Time.utc(2026, 1, 1).iso8601,
+          updated_at: Time.utc(2026, 1, 1).iso8601, version: 0 }
+      ],
+      events: []
+    }
+
+    assert_raises(StandardError) { @store.import(data) }
+    assert_equal 0, @store.list.size, "store must remain empty on malformed data"
+  end
+end
+
+class StoreEventsAfterFrozenTest < Minitest::Test
+  include TestHelpers
+
+  def setup
+    @store = Ask::Session::Store.new
+  end
+
+  def test_events_after_returns_frozen_array
+    @store.create(id: "s1")
+    @store.append_event(build_event(session_id: "s1", seq: 1), expected_sequence: 0)
+    @store.append_event(build_event(session_id: "s1", seq: 2), expected_sequence: 1)
+
+    events = @store.events_after("s1", after_seq: 0)
+    assert events.frozen?, "events_after must return a frozen array"
+    assert_equal 2, events.size
+  end
+
+  def test_events_after_empty_returns_frozen_array
+    @store.create(id: "s1")
+    events = @store.events_after("s1", after_seq: 0)
+    assert events.frozen?, "events_after must return a frozen array even when empty"
+    assert_equal 0, events.size
   end
 end

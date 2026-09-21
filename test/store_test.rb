@@ -97,4 +97,34 @@ class StoreTest < Minitest::Test
       @store.current_sequence("missing")
     end
   end
+
+  def test_state_returns_reconstructed_record
+    @store.create(id: "s1")
+    @store.append_event(build_event(session_id: "s1", seq: 1,
+      type: "session.created", payload: { status: :active },
+      created_at: Time.utc(2026, 1, 1)), expected_sequence: 0)
+    @store.append_event(build_event(session_id: "s1", seq: 2,
+      type: "message.added", payload: { role: :user },
+      created_at: Time.utc(2026, 1, 2)), expected_sequence: 1)
+
+    record = @store.state("s1")
+    assert_kind_of Ask::Session::Record, record
+    assert_equal "s1", record.id
+    assert_equal :active, record.status
+    assert_equal 2, record.version
+  end
+
+  def test_state_returns_default_record_for_empty_events
+    @store.create(id: "s1")
+    record = @store.state("s1")
+    assert_kind_of Ask::Session::Record, record
+    assert_equal "s1", record.id
+    assert_equal :active, record.status
+  end
+
+  def test_state_raises_for_missing_session
+    assert_raises(Ask::Session::NotFoundError) do
+      @store.state("missing")
+    end
+  end
 end

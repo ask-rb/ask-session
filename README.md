@@ -62,10 +62,19 @@ events = store.events_after("sess_001", after_seq: 0)
 # Get all events for a session (frozen)
 events = store.events("sess_001")
 
-# Export/import for portability
+# Export/import for portability (all sessions)
 data = store.export
 new_store = Ask::Session::Store.new
 new_store.import(data)
+
+# Export a single session
+single = store.export("sess_001")
+new_store.import(single)
+
+# Rebuild session state from events
+record = store.state("sess_001")
+record.status  # => :active
+record.version # => 2
 ```
 
 ### State Reducer

@@ -20,3 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Ask::Session::Codec` — JSON dump/load for Record and Event.
 - `Store#events` — returns a frozen array of all events for a session.
 - `Store#export` / `Store#import` — full session portability with duplicate and sequence validation.
+- `Store#state(session_id)` — reconstructs session state from stored events via the reducer.
+- `Store#export(session_id)` — exports a single session payload for targeted import.
+- `Store#import` — accepts both all-sessions and single-session shapes; validates atomically before mutating.
+- `Store#events_after` — now returns a frozen array snapshot.
