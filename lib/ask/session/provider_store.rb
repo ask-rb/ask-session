@@ -9,24 +9,40 @@ module Ask
     # Serialization is JSON with symbol-safe encoding: symbol values (status,
     # payload symbols) round-trip exactly, and Record/Event from_h restore
     # keys, timestamps, and nested structures.
+    #
+    # Concurrency: every public operation runs under an in-process mutex and,
+    # when the adapter exposes the provider lock API (acquire_lock /
+    # release_lock), under a cross-process store lock so read-modify-write
+    # sequences (index updates, optimistic event appends) stay atomic across
+    # processes and adapter connections. Adapters without lock methods fall
+    # back to the in-process mutex alone. Stale expected_sequence writers
+    # still fail with ConcurrencyError — locks serialize, they do not merge.
     class ProviderStore
       RECORD_PREFIX = "ask.session:record:"
       EVENTS_PREFIX = "ask.session:events:"
       INDEX_KEY = "ask.session:index"
+      STORE_LOCK_KEY = "ask.session:lock"
       SYMBOL_TAG = "$ask_sym"
+      LOCK_TTL = 10
+      LOCK_TIMEOUT = 5
+      LOCK_RETRY_MIN_DELAY = 0.001
+      LOCK_RETRY_MAX_DELAY = 0.05
 
-      def initialize(adapter:)
+      def initialize(adapter:, lock_ttl: LOCK_TTL, lock_timeout: LOCK_TIMEOUT)
         unless adapter.respond_to?(:get) && adapter.respond_to?(:set) && adapter.respond_to?(:delete)
           raise ArgumentError, "adapter must respond to get, set, and delete"
         end
 
         @adapter = adapter
+        @lock_ttl = lock_ttl
+        @lock_timeout = lock_timeout
+        @lockable = adapter.respond_to?(:acquire_lock) && adapter.respond_to?(:release_lock)
         @mutex = Mutex.new
       end
 
       def create(id: nil, status: :active, metadata: {}, created_at: nil)
         record = Record.create(id: id, status: status, metadata: metadata, created_at: created_at)
-        @mutex.synchronize do
+        with_store_lock do
           if @adapter.get(record_key(record.id))
             raise DuplicateSessionError, "Session already exists: #{record.id}"
           end
@@ -41,7 +57,7 @@ module Ask
       end
 
       def load(id)
-        @mutex.synchronize { read_record(id) }
+        with_store_lock { read_record(id) }
       end
 
       def load!(id)
@@ -49,11 +65,11 @@ module Ask
       end
 
       def list
-        @mutex.synchronize { read_index.filter_map { |id| read_record(id) } }
+        with_store_lock { read_index.filter_map { |id| read_record(id) } }
       end
 
       def append_event(event, expected_sequence:)
-        @mutex.synchronize do
+        with_store_lock do
           unless exists?(event.session_id)
             raise NotFoundError, "Session not found: #{event.session_id}"
           end
@@ -81,7 +97,7 @@ module Ask
       end
 
       def events_after(session_id, after_seq:)
-        @mutex.synchronize do
+        with_store_lock do
           raise NotFoundError, "Session not found: #{session_id}" unless exists?(session_id)
 
           read_events(session_id).select { |e| e.seq > after_seq }.freeze
@@ -89,7 +105,7 @@ module Ask
       end
 
       def current_sequence(session_id)
-        @mutex.synchronize do
+        with_store_lock do
           raise NotFoundError, "Session not found: #{session_id}" unless exists?(session_id)
 
           read_events(session_id).size
@@ -97,7 +113,7 @@ module Ask
       end
 
       def events(session_id)
-        @mutex.synchronize do
+        with_store_lock do
           raise NotFoundError, "Session not found: #{session_id}" unless exists?(session_id)
 
           read_events(session_id).dup.freeze
@@ -105,7 +121,7 @@ module Ask
       end
 
       def export(session_id = nil)
-        @mutex.synchronize do
+        with_store_lock do
           if session_id
             record = read_record(session_id)
             raise NotFoundError, "Session not found: #{session_id}" unless record
@@ -128,7 +144,7 @@ module Ask
         sessions = data[:sessions] || data["sessions"] || []
         events = data[:events] || data["events"] || []
 
-        @mutex.synchronize do
+        with_store_lock do
           pending_sessions = {}
           pending_events = {}
           existing_events = {}
@@ -180,6 +196,59 @@ module Ask
       end
 
       private
+
+      # Serialize this process's operations, then take the adapter's
+      # cross-process store lock when the provider exposes one. Adapters
+      # without lock APIs fall back to the in-process mutex alone.
+      def with_store_lock
+        @mutex.synchronize do
+          lock = acquire_store_lock if @lockable
+          begin
+            yield
+          ensure
+            release_store_lock(lock) if lock
+          end
+        end
+      end
+
+      # Spin (bounded) until the provider lock is acquired. The lock is
+      # TTL-bounded by the adapter, so a crashed holder cannot wedge the
+      # store forever; exhausting the wait budget surfaces as
+      # ConcurrencyError rather than silently dropping mutual exclusion.
+      #
+      # Transient adapter errors during acquisition (e.g. a check-then-insert
+      # race between connections on the lock row) are retried within the
+      # same budget — losing the race means the lock is held elsewhere.
+      def acquire_store_lock
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @lock_timeout
+        delay = LOCK_RETRY_MIN_DELAY
+        last_error = nil
+        loop do
+          begin
+            lock = @adapter.acquire_lock(STORE_LOCK_KEY, ttl: @lock_ttl)
+            return lock if lock
+          rescue StandardError => e
+            last_error = e
+          end
+
+          if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+            message = "Timed out after #{@lock_timeout}s acquiring store lock"
+            message = "#{message} (last error: #{last_error.message})" if last_error
+            raise ConcurrencyError, message
+          end
+
+          sleep(delay)
+          delay = [delay * 2, LOCK_RETRY_MAX_DELAY].min
+        end
+      end
+
+      # A failed release must never mask the operation's own outcome —
+      # the adapter's TTL reclaims the lock if the token delete failed.
+      def release_store_lock(lock)
+        @adapter.release_lock(STORE_LOCK_KEY, lock)
+      rescue StandardError
+        nil
+      end
 
       def exists?(id)
         !@adapter.get(record_key(id)).nil?
