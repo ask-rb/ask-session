@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - Unreleased
+## [Unreleased]
+
+## [0.1.0] - 2026-09-22
 
 ### Added
 
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Ask::Session::State` — pure reducer that reconstructs session state from events.
 - `Ask::Session::ConcurrencyError` — dedicated error for sequence mismatches.
 - `Ask::Session::SerializationError` — dedicated error for malformed/missing-field JSON.
+- `Ask::Session::NotFoundError` — dedicated error when a session id does not exist.
+- `Ask::Session::DuplicateSessionError` — dedicated error when creating or importing a session id that already exists.
+- `Store#load!` — loads a session or raises `NotFoundError`.
+- `Store#current_sequence` — current event count for a session.
 - `Record#to_h` / `Record.from_h` — portable hash serialization with ISO8601 timestamps.
 - `Event#to_h` / `Event.from_h` — portable hash serialization with ISO8601 timestamps.
 - `Ask::Session::Codec` — JSON dump/load for Record and Event.
@@ -24,7 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Store#export(session_id)` — exports a single session payload for targeted import.
 - `Store#import` — accepts both all-sessions and single-session shapes; validates atomically before mutating.
 - `Store#events_after` — now returns a frozen array snapshot.
-- `Ask::Session::Host` — replayable session host with create, send_message, close, abort, subscribe, and publish-subscribe.
+- `Ask::Session::Host` — replayable session host with create, session, list, events, send_message, close, abort, subscribe, and publish-subscribe.
+- `Host#append(session_id, type:, payload:, trace_id:, causation_id:)` — generic event append for arbitrary event types (tool calls, vendor webhooks, custom lifecycle events) without coupling ask-session to any protocol or agent gem.
+- `Ask::Session::ProviderStore` — durable store backed by any adapter responding to `get`, `set`, and `delete` (e.g. the ask-state-providers SQLite/Redis/Postgres/MySQL adapters): namespaced record/event keys, a session index, and symbol-safe JSON round-trip so sessions, events, and reduced state survive process restarts when a `Host` is built over it.
+- `ProviderStore` cross-process locking — when the adapter exposes `acquire_lock`/`release_lock`, every public operation runs under a TTL-bounded store lock with bounded retry (an exhausted wait budget raises `ConcurrencyError`); adapters without lock methods fall back to an in-process mutex. Stale `expected_sequence` writers still fail with `ConcurrencyError` — locks serialize, they do not merge.
+- `ProviderStore#export` / `ProviderStore#import` — portability parity with `Store`, accepting both all-sessions and single-session shapes with atomic validation before mutating.
 - `Ask::Session::Subscription` — thread-safe subscription with next (Timeout.timeout-backed), wait (alias for next), close, each, and replay.
 - `Ask::Session::InvalidTransitionError` — dedicated error for illegal state transitions (send to closed/aborted, close/abort twice).
 - `Ask::Session::Sink` — ask-runtime event-sink bridge: implements `emit(event_type, event:)` and maps `:tool_started` / `:tool_completed` / `:tool_failed` / `:tool_cancelled` / `:tool_timed_out` to `tool.started` / `tool.completed` / `tool.failed` / `tool.cancelled` / `tool.timed_out` session events via `Host#append`. Duck-typed extraction (no ask-runtime dependency); payloads carry `tool_name`, `tool_call_id`, `input` (started), `outcome`, `duration`, `error`, `output` (terminal), and `turn` when present.
