@@ -20,4 +20,22 @@ class GemspecTest < Minitest::Test
     runtime_deps = spec.dependencies.select { |d| d.type == :runtime }
     assert_empty runtime_deps
   end
+
+  def test_package_contents
+    spec = Gem::Specification.load("ask-session.gemspec")
+    files = spec.files
+
+    assert_includes files, "lib/ask/session.rb"
+    assert_includes files, "LICENSE"
+    assert_includes files, "README.md"
+    assert_includes files, "CHANGELOG.md"
+    refute_includes files, "GOAL.md"
+    refute files.any? { |f| f.start_with?("test/") }, "test files must not be packaged"
+    assert(files.all? { |f| File.file?(f) }, "spec.files must contain only files")
+  end
+
+  def test_mfa_metadata
+    spec = Gem::Specification.load("ask-session.gemspec")
+    assert_equal "true", spec.metadata["rubygems_mfa_required"]
+  end
 end
