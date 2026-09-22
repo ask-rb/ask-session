@@ -36,3 +36,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Host#publish` prunes closed subscriptions from its per-session list.
 - `Subscription#next` is the primary method using `Queue#pop` wrapped in `Timeout.timeout`; `wait` is aliased to `next` for backward compatibility.
 - `Subscription#close` pushes a sentinel so a blocked `next` wakes with `nil` instead of relying on sleep polling.
+- `Subscription#each` now blocks until close instead of timing out after 0.1s of silence — it yields across quiet periods and only stops when the subscription is closed (restores the documented "yields until closed" contract).

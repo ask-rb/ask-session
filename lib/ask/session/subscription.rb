@@ -43,7 +43,7 @@ module Ask
       alias_method :wait, :next
 
       def each
-        while (event = self.next(timeout: 0.1))
+        while (event = self.next)
           yield event
         end
       end

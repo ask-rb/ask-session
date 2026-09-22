@@ -367,6 +367,31 @@ class HostSubscriptionCloseTest < Minitest::Test
     sub.each { |e| received << e }
     assert_empty received
   end
+
+  def test_each_survives_silence_until_close
+    @host.create(id: "s1")
+    sub = @host.subscribe("s1")
+    sub.wait(timeout: 0.1) # consume replay: session.created
+
+    received = []
+    thread = Thread.new { sub.each { |e| received << e } }
+
+    # Silence longer than the old 0.1s poll window: each must keep
+    # iterating until close, not time out and drop the subscriber.
+    sleep 0.3
+    assert thread.alive?, "each must keep iterating across silence"
+
+    @host.send_message("s1", content: "late")
+    # give the live event a moment to arrive
+    sleep 0.15
+
+    sub.close
+    thread.join(1)
+
+    refute thread.alive?, "each must terminate after close"
+    late = received.find { |e| e.type == "message.added" && e.payload[:content] == "late" }
+    refute_nil late, "each must still receive events published after silence"
+  end
 end
 
 class HostSubscriptionTimeoutTest < Minitest::Test

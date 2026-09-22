@@ -34,8 +34,8 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 - `Ask::Session::Subscription` is a thread-safe subscription backed by a Queue
   and Mutex. `next` is the primary method using `Timeout.timeout` with
   `Queue#pop`; `wait` is an alias for backward compatibility. `each` yields
-  until closed, and `close` pushes a sentinel so a blocked `next` wakes with
-  `nil`.
+  until closed (blocking `next`, no poll window), and `close` pushes a sentinel
+  so a blocked `next`/`each` wakes with `nil`.
 
 ## Phases with task lists
 
@@ -52,6 +52,7 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 | | - [x] Add Subscription (next, wait alias, close, each, replay). |
 | | - [x] Add InvalidTransitionError for illegal state transitions. |
 | Phase 4 Hardening | - [x] Host#initialize default store, Host#list with State.reduce, Host#create under mutex, Subscription#next with Timeout.timeout, Host#publish prunes closed subs. |
+| Phase 4b Fix | - [x] Subscription#each blocks until close instead of timing out after 0.1s of silence (restores documented "yields until closed"). |
 
 ## Definition of done
 
@@ -60,3 +61,4 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 3. `Ask::Session::State` reconstructs session state from a list of events.
 4. Unknown event types are preserved without raising or corrupting state.
 5. The gem can be built with `gem build` and has no external runtime dependencies.
+6. `Subscription#each` iterates until close regardless of event silence.
