@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Task guides in `docs/` — in-memory sessions, durable SQLite sessions via the optional ask-state-providers integration, subscriptions and replay, tool lifecycle through `Host#sink`, and export/import — with a `docs/index.md` hub.
+- README restructured to an overview, an in-memory quick start, and links to all guides.
+
 ## [0.1.0] - 2026-09-22
 
 ### Added
