@@ -9,6 +9,14 @@ tool lifecycle (`emit(event_type, event:)`) and you want that history to become
 part of the event-sourced session. The sink duck-types the runtime events'
 public readers, so ask-session keeps zero runtime dependencies on ask-runtime.
 
+These provider-neutral lifecycle events are not the same vocabulary as the
+ask-session-protocol wire events (`tool.use`, `tool.delta`, and `tool.result`).
+Protocol-facing integrations translate agent events at their boundary (for
+example, ask-app-server's `EventTranslator`); ask-session itself does not
+depend on that protocol. For a given tool execution, use one persistence
+producer per host: attaching both this runtime sink and an adapter that
+persists protocol-facing tool events records two lifecycle histories.
+
 ## Prerequisites and Setup
 
 - Everything from [In-Memory Sessions](in_memory_sessions.md)
