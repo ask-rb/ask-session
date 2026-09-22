@@ -125,6 +125,13 @@ module Ask
         end
       end
 
+      # Build a Sink bound to this host and session — the bridge that
+      # accepts ask-runtime event-sink emissions (tool lifecycle) and
+      # records them as session events.
+      def sink(session_id, trace_id: nil, causation_id: nil)
+        Sink.new(host: self, session_id: session_id, trace_id: trace_id, causation_id: causation_id)
+      end
+
       private
 
       def next_sub_id

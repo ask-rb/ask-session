@@ -9,7 +9,7 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 ## How this works (the rules of engagement)
 
 - Every behavior change is test-first and must leave the full suite green.
-- Use stdlib only — no database, transport, or ask-agent integration yet.
+- Use stdlib only — no database, transport, or gem dependencies yet.
 - Immutable value objects for `Record` and `Event`; no shared mutable state.
 - Concurrency errors must raise a dedicated, named exception on sequence mismatch.
 - IDs and timestamps are deterministic when supplied, auto-generated otherwise.
@@ -36,6 +36,36 @@ guardrails, and a state reducer that reconstructs session snapshots from history
   `Queue#pop`; `wait` is an alias for backward compatibility. `each` yields
   until closed (blocking `next`, no poll window), and `close` pushes a sentinel
   so a blocked `next`/`each` wakes with `nil`.
+- `Ask::Session::Sink` is the ask-runtime event-sink boundary. It implements
+  the producer side of `ExecutionContext#event_sink` —
+  `emit(event_type, event:)` — and maps the five runtime tool lifecycle types
+  (`:tool_started`, `:tool_completed`, `:tool_failed`, `:tool_cancelled`,
+  `:tool_timed_out`) onto session events `tool.started` / `tool.completed` /
+  `tool.failed` / `tool.cancelled` / `tool.timed_out` via `Host#append`.
+  Extraction is duck-typed over the runtime events' public readers, so the
+  gem keeps zero runtime dependencies. Cross-session events raise
+  `SessionMismatchError`; appends to terminal (closed/aborted) sessions are
+  dropped so in-flight tool runs never fail because recording ended; unknown
+  event types are ignored for forward compatibility.
+- `Host#sink(session_id, trace_id:, causation_id:)` is the factory that binds
+  a `Sink` to a host and session.
+
+## Cross-gem boundary notes (discovered)
+
+- `ask-agent` declares `ask-session >= 0.1.0` and its `SessionAdapter` calls
+  `create`, `session`, `events`, `send_message`, `append`, `close`, `abort` —
+  all present and covered. One drift lives on the ask-agent side: `resume`
+  guards with `raise ArgumentError unless host.session(id)`, but `Host#session`
+  raises `Ask::Session::NotFoundError` for missing sessions (the tested,
+  committed contract here). The adapter should rescue/re-raise; not changed
+  in this repository.
+- `ask-runtime`, `ask-mcp`, and `ask-sandbox-providers` all emit tool
+  lifecycle through `context.event_sink.emit(type, event:)`. Nothing in the
+  ecosystem bridged that stream into durable session state — `Sink` is that
+  bridge (Phase 5).
+- Wire vocabulary (`ask-session-protocol`) stays out of this gem: `Sink`
+  records session-state events only; translation to the canonical wire
+  envelope belongs to the host/protocol layer.
 
 ## Phases with task lists
 
@@ -53,6 +83,10 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 | | - [x] Add InvalidTransitionError for illegal state transitions. |
 | Phase 4 Hardening | - [x] Host#initialize default store, Host#list with State.reduce, Host#create under mutex, Subscription#next with Timeout.timeout, Host#publish prunes closed subs. |
 | Phase 4b Fix | - [x] Subscription#each blocks until close instead of timing out after 0.1s of silence (restores documented "yields until closed"). |
+| Phase 5 Runtime boundary | - [x] Add Ask::Session::Sink mapping runtime tool lifecycle emits to session events (duck-typed, stdlib only). |
+| | - [x] Add SessionMismatchError; terminal sessions drop events; NotFound still raises. |
+| | - [x] Add Host#sink factory; export/import and subscriber coverage for sink events. |
+| | - [x] Verify: focused + full suite, gem build, diff review, commit. |
 
 ## Definition of done
 
@@ -61,4 +95,6 @@ guardrails, and a state reducer that reconstructs session snapshots from history
 3. `Ask::Session::State` reconstructs session state from a list of events.
 4. Unknown event types are preserved without raising or corrupting state.
 5. The gem can be built with `gem build` and has no external runtime dependencies.
-6. `Subscription#each` iterates until close regardless of event silence.
+6. A runtime executor can wire `ExecutionContext#event_sink` to
+   `host.sink(id)` and have tool lifecycle recorded as session events.
+7. `Subscription#each` iterates until close regardless of event silence.

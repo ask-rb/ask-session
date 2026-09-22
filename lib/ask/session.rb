@@ -12,6 +12,7 @@ require_relative "session/state"
 require_relative "session/codec"
 require_relative "session/subscription"
 require_relative "session/host"
+require_relative "session/sink"
 
 module Ask
   module Session
@@ -21,5 +22,6 @@ module Ask
     class DuplicateSessionError < Error; end
     class SerializationError < Error; end
     class InvalidTransitionError < Error; end
+    class SessionMismatchError < Error; end
   end
 end

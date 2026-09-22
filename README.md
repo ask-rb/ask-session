@@ -147,6 +147,35 @@ event = host.append("s1",
 
 Every appended event advances the session's reduced `version` and `updated_at`, regardless of event type. Appends to closed or aborted sessions raise `InvalidTransitionError`. Adapters use `append` instead of `send_message` when the event type is not `message.added` — this keeps ask-session free of protocol and agent dependencies.
 
+#### Runtime tool-lifecycle sink
+
+`Ask::Session::Sink` is the boundary to ask-runtime's event-sink contract. Executors in ask-agent, ask-mcp, and ask-sandbox-providers report tool lifecycle through `ExecutionContext#event_sink` by calling `emit(event_type, event:)` — point that sink at a session host and tool history becomes part of the event-sourced session:
+
+```ruby
+host = Ask::Session::Host.new
+host.create(id: "s1")
+
+sink = host.sink("s1", trace_id: "trace_abc")
+# pass `sink` as ExecutionContext's event_sink; runtime emits then record:
+#   :tool_started   -> tool.started
+#   :tool_completed -> tool.completed
+#   :tool_failed    -> tool.failed
+#   :tool_cancelled -> tool.cancelled
+#   :tool_timed_out -> tool.timed_out
+
+host.events("s1").last.payload
+# => { tool_name: "bash", tool_call_id: "tc_1", input: { "cmd" => "ls" }, turn: 3 }
+```
+
+Terminal events carry `outcome` (`:completed`/`:failed`/`:cancelled`/`:timed_out`), `duration` in seconds, `error` when present, and `output` when the runtime result exposes one. The sink duck-types the runtime events' public readers, so ask-session keeps zero runtime dependencies.
+
+Guards: an event correlated to a different session raises `Ask::Session::SessionMismatchError`; appends to closed/aborted sessions are dropped (terminal sessions stop recording without failing an in-flight tool run); missing sessions raise `NotFoundError`; unknown event types are ignored.
+
+```ruby
+sink = Ask::Session::Sink.new(host: host, session_id: "s1", causation_id: originating.trace_id)
+sink.listening?(:tool_started) # => true
+```
+
 ## Contributing
 
 1. Fork it

@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Ask::Session::Host` — replayable session host with create, send_message, close, abort, subscribe, and publish-subscribe.
 - `Ask::Session::Subscription` — thread-safe subscription with next (Timeout.timeout-backed), wait (alias for next), close, each, and replay.
 - `Ask::Session::InvalidTransitionError` — dedicated error for illegal state transitions (send to closed/aborted, close/abort twice).
+- `Ask::Session::Sink` — ask-runtime event-sink bridge: implements `emit(event_type, event:)` and maps `:tool_started` / `:tool_completed` / `:tool_failed` / `:tool_cancelled` / `:tool_timed_out` to `tool.started` / `tool.completed` / `tool.failed` / `tool.cancelled` / `tool.timed_out` session events via `Host#append`. Duck-typed extraction (no ask-runtime dependency); payloads carry `tool_name`, `tool_call_id`, `input` (started), `outcome`, `duration`, `error`, `output` (terminal), and `turn` when present.
+- `Ask::Session::SessionMismatchError` — dedicated error when a sink receives an event correlated to a different session.
+- `Host#sink(session_id, trace_id:, causation_id:)` — factory that binds a `Sink` to a host and session.
 
 ### Changed
 
@@ -37,3 +40,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Subscription#next` is the primary method using `Queue#pop` wrapped in `Timeout.timeout`; `wait` is aliased to `next` for backward compatibility.
 - `Subscription#close` pushes a sentinel so a blocked `next` wakes with `nil` instead of relying on sleep polling.
 - `Subscription#each` now blocks until close instead of timing out after 0.1s of silence — it yields across quiet periods and only stops when the subscription is closed (restores the documented "yields until closed" contract).
+- `Sink#emit` drops (does not raise) appends to closed or aborted sessions so in-flight tool runs are never failed by the recording boundary; missing sessions still raise `NotFoundError`.
